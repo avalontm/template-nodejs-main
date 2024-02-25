@@ -1,22 +1,17 @@
-Dockerfile
+FROM node:10-alpine
 
-# Base image with Node.js 18
-FROM node:18  
+RUN mkdir -p /home/node/app/node_modules && chown -R node:node /home/node/app
 
-# Create a working directory
-WORKDIR /app
+WORKDIR /home/node/app
 
-# Copy package.json and package-lock.json (if exists)
 COPY package*.json ./
 
-# Install dependencies
+USER node
+
 RUN npm install
 
-# Copy your application code (if not using package.json scripts)
-# COPY . .
+COPY --chown=node:node . .
 
-# Expose port (adjust if needed)
-EXPOSE 3000
+EXPOSE 8080
 
-# Start the application (replace with your command)
-CMD ["npm", "start"]
+CMD [ "node", "app.js" ]
