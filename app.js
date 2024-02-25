@@ -75,8 +75,7 @@ app.put('/api/usuarios/:id', (req, res) => {
   });
 });
 
-app.delete('/api/usuarios/:id', (
-  
+
 app.listen(port, () => {
     console.log(`App listening on port ${port}`);
-})
+});
