@@ -9,6 +9,7 @@ const dbConfig = {
   database: 'database',
   user: 'fl0user',
   password: 'Gd1u4tTlpBNg',
+  sslmode:'require',
 };
 
 const pgClient = new pg.Client(dbConfig);
