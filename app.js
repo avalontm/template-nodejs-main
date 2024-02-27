@@ -15,9 +15,28 @@ const dbConfig = {
   ssl: true,
 };
 
-function generarToken() {
-  return crypto.randomBytes(16).toString('hex');
-}
+const auth = async (req, res, next) => {
+  const apiKey = req.headers['api-key'];
+  var user = null;
+
+  if (!apiKey) {
+    return res.status(401).json({ status: false, message: 'Falta clave API' });
+  }
+
+  try {
+    user = await validateApiKey(apiKey); 
+    if (!user) {
+      return res.status(401).json({ status: false, message: 'Clave API no válida' });
+    }
+  } catch (error) {
+    console.error('Error al validar la clave API:', error.message);
+    return res.status(500).json({ status: false, message: 'Error Interno del Servidor' });
+  }
+
+  req.user = user; 
+  next();
+};
+
 
 const pgClient = new pg.Client(dbConfig);
 
@@ -35,7 +54,86 @@ app.use(bodyParser.urlencoded({ extended: false }))
 // parse application/json
 app.use(bodyParser.json())
 
-app.post('/api/usuarios/crear_tabla', (req, res) => {
+async function validateApiKey(apiKey) {
+  try {
+    // Consultar la tabla "acceso" por la API key
+    const result = await pgClient.query(`
+    SELECT u.*
+    FROM usuarios AS u
+    INNER JOIN accesos AS a ON u.id = a.usuario_id
+    WHERE a.api_key = $1;
+  `, [apiKey]);
+
+    // Check for invalid API key
+    if (result.rows.length === 0) {
+      return null;
+    }
+
+    // Return the complete user object
+    return result.rows[0];
+  } catch (error) {
+    console.error('Error al validar la clave API:', error.stack);
+    throw error; // Handle error appropriately
+  }
+}
+
+function generarApiKey() {
+  return crypto.randomBytes(32).toString('hex');
+}
+
+function generarToken() {
+  return crypto.randomBytes(16).toString('hex');
+}
+
+app.post('/api/acceso/crear_tabla', auth, (req, res) => {
+  // Create the authorization table only if the user is authorized
+  pgClient.query(`
+    CREATE TABLE IF NOT EXISTS accesos (
+      id SERIAL PRIMARY KEY,
+      usuario_id INT NOT NULL UNIQUE REFERENCES usuarios(id) ON DELETE CASCADE,
+      api_key VARCHAR(255) NOT NULL UNIQUE,
+      acceso_level INT NOT NULL DEFAULT 0,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+  `, (err) => {
+    if (err) {
+      console.error('Error al crear la tabla:', err.stack);
+      res.status(500).json({ status: false, message: 'Error al crear la tabla' });
+    } else {
+      console.log('Tabla autorizacion creada correctamente');
+      res.status(201).json({ status: true, message: 'Tabla autorizacion creada correctamente' });
+    }
+  });
+});
+
+app.post('/api/acceso/crear', auth, (req, res) => {
+
+  const { usuario_id, acceso_level } = req.body;
+
+  if (!usuario_id || !acceso_level) {
+    return res.status(400).json({ status: false, message: 'Faltan campos obligatorios: usuario_id, acceso_level'});
+  }
+
+  const apikey = generarApiKey();
+
+  const sql = `
+    INSERT INTO accesos (usuario_id, api_key, acceso_level)
+    VALUES ($1, $2, $3 )
+    RETURNING id, api_key;
+  `;
+
+  pgClient.query(sql, [usuario_id, apikey, acceso_level], (err, result) => {
+    if (err) {
+      console.error('Error al crear el acceso:', err.stack);
+      res.status(500).json({ message: 'Error al crear el acceso' });
+    } else {
+      console.log('Acceso creado correctamente:', result.rows[0]);
+      res.status(201).json({ status: true, message: 'Acceso creado correctamente', ...result.rows[0] });
+    }
+  });
+});
+
+app.post('/api/usuarios/crear_tabla', auth, (req, res) => {
 
   const sql = `
     CREATE TABLE usuarios (
@@ -57,7 +155,7 @@ app.post('/api/usuarios/crear_tabla', (req, res) => {
   });
 });
 
-app.post('/api/cursos/crear_tabla', (req, res) => {
+app.post('/api/cursos/crear_tabla', auth, (req, res) => {
 
   const sql = `
     CREATE TABLE cursos (
@@ -81,14 +179,14 @@ app.post('/api/cursos/crear_tabla', (req, res) => {
 });
 
 // Login route
-app.post('/api/login',  (req, res) => {
+app.post('/api/login', (req, res) => {
   const { email, contrasena } = req.body;
 
   if (!email || !contrasena) {
     return res.status(400).json({status: false,  message: 'Faltan campos obligatorios: correo electrónico y contraseña'});
   }
 
-  pgClient.query('SELECT id, nombre, email, contrasena FROM usuarios WHERE email = $1 ', [email], (err, result) => {
+  pgClient.query('SELECT u.id, u.nombre, u.email, u.contrasena, a.api_key FROM usuarios AS u LEFT JOIN accesos AS a ON u.id = a.usuario_id WHERE u.email = $1', [email], (err, result) => {
     if (err) {
       console.error('Error al obtener el usuario:', err.stack);
       res.status(500).json({status: false,  message: 'Error al obtener el usuario' });
@@ -97,21 +195,20 @@ app.post('/api/login',  (req, res) => {
     } else {
 
       var user =  result.rows[0];
-      console.log(user.contrasena); 
-    
+
       if(user.contrasena == contrasena)
       {
         res.json(user);
       }else
       {
-        res.status(404).json({status: true,  message: 'Contraseña incorrecta.' });
+        res.status(404).json({status: false,  message: 'Contraseña incorrecta.' });
       }
     }
   });
 });
 
 
-app.post('/api/usuarios', (req, res) => {
+app.post('/api/usuarios', auth, (req, res) => {
 
   const { nombre, email, contrasena } = req.body;
 
@@ -129,7 +226,7 @@ app.post('/api/usuarios', (req, res) => {
   });
 });
 
-app.get('/api/usuarios', (req, res) => {
+app.get('/api/usuarios', auth, (req, res) => {
   pgClient.query('SELECT id, nombre, email, contrasena FROM usuarios', (err, result) => {
     if (err) {
       console.error('Error al obtener los usuarios:', err.stack);
@@ -140,7 +237,7 @@ app.get('/api/usuarios', (req, res) => {
   });
 });
 
-app.get('/api/usuarios/:id', (req, res) => {
+app.get('/api/usuarios/:id', auth, (req, res) => {
   const id = req.params.id;
 
   if (!id) {
@@ -159,7 +256,7 @@ app.get('/api/usuarios/:id', (req, res) => {
   });
 });
 
-app.put('/api/usuarios/:id', (req, res) => {
+app.put('/api/usuarios/:id', auth, (req, res) => {
   const id = req.params.id;
   const { nombre, contrasena } = req.body;
 
@@ -179,7 +276,7 @@ app.put('/api/usuarios/:id', (req, res) => {
   });
 });
 
-app.delete('/api/usuarios/:id', (req, res) => {
+app.delete('/api/usuarios/:id', auth, (req, res) => {
   const id = req.params.id;
 
   if (!id) {
@@ -229,7 +326,7 @@ app.post('/api/cursos/crear', (req, res) => {
   });
 });
 
-app.get('/api/cursos', (req, res) => {
+app.get('/api/cursos', auth, (req, res) => {
 
   const sql = `
     SELECT curso_id, usuario_id, completado FROM cursos;
@@ -246,7 +343,7 @@ app.get('/api/cursos', (req, res) => {
   });
 });
 
-app.get('/api/cursos/usuario/:usuario_id', (req, res) => {
+app.get('/api/cursos/usuario/:usuario_id', auth, (req, res) => {
 
   const usuario_id = parseInt(req.params.usuario_id); // Ensure correct conversion
 
@@ -267,7 +364,7 @@ app.get('/api/cursos/usuario/:usuario_id', (req, res) => {
   });
 });
 
-app.post('/api/cursos/completar', (req, res) => {
+app.post('/api/cursos/completar', auth, (req, res) => {
 
   const { curso_id, usuario_id, token } = req.body;
 
