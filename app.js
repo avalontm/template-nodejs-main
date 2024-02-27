@@ -327,33 +327,13 @@ app.post('/api/cursos/crear', (req, res) => {
 });
 
 app.get('/api/cursos', auth, (req, res) => {
+  const { id } = req.user; 
 
   const sql = `
-    SELECT curso_id, usuario_id, completado FROM cursos;
+    SELECT curso_id, usuario_id, completado FROM cursos WHERE usuario_id = $1;
   `;
 
-  pgClient.query(sql, (err, result) => {
-    if (err) {
-      console.error('Error al obtener los cursos:', err.stack);
-      res.status(500).json({ message: 'Error al obtener los cursos' });
-    } else {
-      console.log('Cursos encontrados:', result.rows);
-      res.status(200).json({ cursos: result.rows });
-    }
-  });
-});
-
-app.get('/api/cursos/usuario/:usuario_id', auth, (req, res) => {
-
-  const usuario_id = parseInt(req.params.usuario_id); // Ensure correct conversion
-
-  const sql = `
-    SELECT curso_id, usuario_id, completado
-    FROM cursos
-    WHERE usuario_id = $1;
-  `;
-
-  pgClient.query(sql, [usuario_id], (err, result) => {
+  pgClient.query(sql, [id], (err, result) => {
     if (err) {
       console.error('Error al obtener los cursos:', err.stack);
       res.status(500).json({ message: 'Error al obtener los cursos' });
@@ -365,11 +345,11 @@ app.get('/api/cursos/usuario/:usuario_id', auth, (req, res) => {
 });
 
 app.post('/api/cursos/completar', auth, (req, res) => {
+  const { id } = req.user; 
+  const { curso_id, token } = req.body;
 
-  const { curso_id, usuario_id, token } = req.body;
-
-  if (!curso_id || !usuario_id || !token) {
-    return res.status(400).json({ status: false, message: 'Faltan campos obligatorios: curso_id, usuario_id, token' });
+  if (!id || !curso_id || !token) {
+    return res.status(400).json({ status: false, message: 'Faltan campos obligatorios: curso_id, token' });
   }
 
   const sql = `
@@ -377,7 +357,7 @@ app.post('/api/cursos/completar', auth, (req, res) => {
     WHERE curso_id = $1 AND usuario_id = $2;
   `;
 
-  pgClient.query(sql, [curso_id, usuario_id], (err, result) => {
+  pgClient.query(sql, [curso_id, id], (err, result) => {
     if (err) {
       console.error('Error al obtener el curso:', err.stack);
       res.status(500).json({ status: false, message: 'Error al obtener el curso' });
@@ -388,16 +368,16 @@ app.post('/api/cursos/completar', auth, (req, res) => {
       const tokenValido = curso.token === token;
 
       if (!tokenValido) {
-        return res.status(401).json({ status: false, message: 'Token inválido' });
+        return res.status(401).json({ status: false, message: 'El token del curso es inválido' });
       }
 
       const sqlUpdate = `
         UPDATE cursos
-        SET completado = TRUE
+        SET completado = TRUEs
         WHERE curso_id = $1 AND usuario_id = $2;
       `;
 
-      pgClient.query(sqlUpdate, [curso_id, usuario_id], (err) => {
+      pgClient.query(sqlUpdate, [curso_id, id], (err) => {
         if (err) {
           console.error('Error al completar el curso:', err.stack);
           res.status(500).json({ status: false, message: 'Error al completar el curso' });
