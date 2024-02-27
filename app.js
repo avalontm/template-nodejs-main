@@ -4,7 +4,7 @@ var bodyParser = require('body-parser')
 const crypto = require('crypto');
 
 const app = express();
-const port = process.env.PORT ?? 3000;
+const port = process.env.PORT ? process.env.PORT : 3000;
 
 const dbConfig = {
   host: 'ep-solitary-glade-a5y52u8p.us-east-2.aws.neon.fl0.io',
