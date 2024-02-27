@@ -1,5 +1,6 @@
 const express = require('express');
 var pg = require('pg');
+var bodyParser = require('body-parser')
 const app = express();
 const port = process.env.PORT ?? 3000;
 
@@ -9,7 +10,7 @@ const dbConfig = {
   database: 'database',
   user: 'fl0user',
   password: 'Gd1u4tTlpBNg',
-  sslmode:'require',
+  ssl: true,
 };
 
 const pgClient = new pg.Client(dbConfig);
@@ -22,10 +23,39 @@ pgClient.connect((err) => {
   }
 });
 
-app.post('/api/usuarios', (req, res) => {
-  const { nombre, email } = req.body;
+// parse application/x-www-form-urlencoded
+app.use(bodyParser.urlencoded({ extended: false }))
 
-  pgClient.query('INSERT INTO usuarios (nombre, email) VALUES ($1, $2)', [nombre, email], (err, result) => {
+// parse application/json
+app.use(bodyParser.json())
+
+app.post('/api/usuarios/crear_tabla', (req, res) => {
+
+  const sql = `
+    CREATE TABLE usuarios (
+      id SERIAL PRIMARY KEY,
+      nombre VARCHAR(255) NOT NULL,
+      email VARCHAR(255) UNIQUE NOT NULL,
+      contrasena VARCHAR(255) NOT NULL
+    );
+  `;
+
+  pgClient.query(sql, (err) => {
+    if (err) {
+      console.error('Error al crear la tabla:', err.stack);
+      res.status(500).json({ error: 'Error al crear la tabla' });
+    } else {
+      console.log('Tabla usuarios creada correctamente');
+      res.status(201).json({ message: 'Tabla usuarios creada correctamente' });
+    }
+  });
+});
+
+app.post('/api/usuarios', (req, res) => {
+  console.log(req.body); //
+  const { nombre, email, contrasena } = req.body;
+
+  pgClient.query('INSERT INTO usuarios (nombre, email, contrasena) VALUES ($1, $2, $3)', [nombre, email, contrasena], (err, result) => {
     if (err) {
       console.error('Error al crear el usuario:', err.stack);
       res.status(500).json({ error: 'Error al crear el usuario' });
