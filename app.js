@@ -155,14 +155,28 @@ app.post('/api/usuarios/crear_tabla', auth, (req, res) => {
   });
 });
 
+app.post('/api/cursos/del_tabla', auth, (req, res) => {
+  const sql = `DROP TABLE cursos;`;
+
+  pgClient.query(sql, (err) => {
+    if (err) {
+      console.error(err.message);
+      res.status(500).json({status: false,  message: err.message });
+    } else {
+      console.log("Tabla eliminada exitosamente!");
+      res.status(201).json({status: true,  message: 'Tabla eliminada exitosamente!' });
+    }
+  });
+});
+
 app.post('/api/cursos/crear_tabla', auth, (req, res) => {
 
   const sql = `
     CREATE TABLE cursos (
       id SERIAL PRIMARY KEY,
-      curso_id INT NOT NULL,
+      curso_id VARCHAR(10) NOT NULL,
       usuario_id INT NOT NULL,
-      token VARCHAR(255) UNIQUE NOT NULL,
+      token VARCHAR(32) NOT NULL,
       completado BOOLEAN DEFAULT FALSE
     );
   `;
@@ -208,12 +222,16 @@ app.post('/api/login', (req, res) => {
 });
 
 
+/* ============================================================================== */
+/* ========================        USUARIOS     ================================= */
+/* ============================================================================== */
+
 app.post('/api/usuarios', auth, (req, res) => {
 
   const { nombre, email, contrasena } = req.body;
 
   if (!nombre || !email || !contrasena) {
-    return res.status(400).json({status: false,  message: 'Faltan campos obligatorios: correo electrónico y contraseña'});
+    return res.status(400).json({status: false,  message: 'Faltan campos obligatorios: nombre, email, contrasena'});
   }
 
   pgClient.query('INSERT INTO usuarios (nombre, email, contrasena) VALUES ($1, $2, $3)', [nombre, email, contrasena], (err, result) => {
@@ -230,7 +248,7 @@ app.get('/api/usuarios', auth, (req, res) => {
   pgClient.query('SELECT id, nombre, email, contrasena FROM usuarios', (err, result) => {
     if (err) {
       console.error('Error al obtener los usuarios:', err.stack);
-      res.status(500).json({ message: 'Error al obtener los usuarios' });
+      res.status(500).json({status: false, message: 'Error al obtener los usuarios' });
     } else {
       res.json(result.rows);
     }
@@ -241,15 +259,15 @@ app.get('/api/usuarios/:id', auth, (req, res) => {
   const id = req.params.id;
 
   if (!id) {
-    return res.status(400).json({ message: 'Faltan campos obligatorios: id'});
+    return res.status(400).json({ status: false, message: 'Faltan campos obligatorios: id'});
   }
 
   pgClient.query('SELECT id, nombre, email FROM usuarios WHERE id = $1', [id], (err, result) => {
     if (err) {
       console.error('Error al obtener el usuario:', err.stack);
-      res.status(500).json({ message: 'Error al obtener el usuario' });
+      res.status(500).json({ status: false, message: 'Error al obtener el usuario' });
     } else if (result.rows.length === 0) {
-      res.status(404).json({ message: 'Usuario no encontrado' });
+      res.status(404).json({ status: false, message: 'Usuario no encontrado' });
     } else {
       res.json(result.rows[0]);
     }
@@ -301,38 +319,49 @@ app.delete('/api/usuarios/:id', auth, (req, res) => {
 
 app.post('/api/cursos/crear', (req, res) => {
 
-  const { curso_id, usuario_id } = req.body;
+  const { curso_id } = req.body;
+  let count = 0;
 
-  if (!curso_id || !usuario_id) {
-    return res.status(400).json({ status: false, message: 'Faltan campos obligatorios: curso_id, usuario_id'});
+  if (!curso_id ) {
+    return res.status(400).json({ status: false, message: 'Faltan campos obligatorios: curso_id'});
   }
 
-  const token = generarToken();
-
-  const sql = `
-    INSERT INTO cursos (curso_id, usuario_id, token, completado)
-    VALUES ($1, $2, $3, FALSE)
-    RETURNING id, token;
-  `;
-
-  pgClient.query(sql, [curso_id, usuario_id, token], (err, result) => {
+  //Asignamos el curso a cada uno de los usuarios.
+  pgClient.query('SELECT * FROM usuarios', (err, result) => {
     if (err) {
-      console.error('Error al crear el curso:', err.stack);
-      res.status(500).json({ message: 'Error al crear el curso' });
+      console.error('Error al obtener los usuarios:', err.stack);
+      res.status(500).json({ status: false, message: 'Error al obtener los usuarios' });
     } else {
-      console.log('Curso creado correctamente:', result.rows[0]);
-      res.status(201).json({ status: true, message: 'Curso creado correctamente', ...result.rows[0] });
+      console.log('Generar cursos para los usuarios');
+
+      result.rows.forEach((usuario) => {
+        const token = generarToken();
+        console.log(`token: ${token} | usaurio: ${usuario.nombre}`);
+
+        pgClient.query('INSERT INTO cursos (curso_id, usuario_id, token, completado) VALUES ($1, $2, $3, FALSE)', [curso_id, usuario.id, token], (err2, result2) => {
+          if (err2) {
+            console.error('Error al crear el curso:', err2.stack);
+            res.status(500).json({ status: false, message: 'Error al crear el curso' });
+            } else {
+              count++;
+              console.log(`curso creado para el usaurio: ${usuario.nombre} | contador: ${count}`);
+            }
+          });
+      
+      });
+
+      res.status(200).json({ status: true, message: `Curso creado correctamente: ${count} usuarios.`});
     }
+
   });
 });
-
 
 app.get('/api/cursos/:id', auth, (req, res) => {
   const curso_id = req.params.id;
   const { id } = req.user; 
 
   const sql = `
-    SELECT curso_id, usuario_id, token, completado FROM cursos WHERE id = $1 AND usuario_id = $2;
+    SELECT curso_id, usuario_id, token, completado FROM cursos WHERE curso_id = $1 AND usuario_id = $2;
   `;
 
   pgClient.query(sql, [curso_id, id], (err, result) => {
