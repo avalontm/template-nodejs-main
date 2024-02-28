@@ -326,6 +326,27 @@ app.post('/api/cursos/crear', (req, res) => {
   });
 });
 
+
+app.get('/api/cursos/:id', auth, (req, res) => {
+  const curso_id = req.params.id;
+  const { id } = req.user; 
+
+  const sql = `
+    SELECT curso_id, usuario_id, token, completado FROM cursos WHERE id = $1 AND usuario_id = $2;
+  `;
+
+  pgClient.query(sql, [curso_id, id], (err, result) => {
+    if (err) {
+      console.error('Error al obtener los cursos:', err.stack);
+      res.status(500).json({ message: 'Error al obtener los cursos' });
+    } else {
+      console.log('Cursos encontrados:', result.rows);
+      res.status(200).json({ cursos: result.rows });
+    }
+  });
+});
+
+
 app.get('/api/cursos', auth, (req, res) => {
   const { id } = req.user; 
 
@@ -373,7 +394,7 @@ app.post('/api/cursos/completar', auth, (req, res) => {
 
       const sqlUpdate = `
         UPDATE cursos
-        SET completado = TRUEs
+        SET completado = TRUE
         WHERE curso_id = $1 AND usuario_id = $2;
       `;
 
@@ -382,8 +403,18 @@ app.post('/api/cursos/completar', auth, (req, res) => {
           console.error('Error al completar el curso:', err.stack);
           res.status(500).json({ status: false, message: 'Error al completar el curso' });
         } else {
-          console.log('Curso completado correctamente');
-          res.status(200).json({ status: true, message: 'Curso completado exitosamente' });
+
+          var curso = result.rows[0];
+          if(curso.completado == true)
+          {
+            console.log('Este curso ya esta completado');
+            res.status(200).json({ status: true, message: 'Este curso ya ha sido completado.' });
+          }
+          else
+          {
+            console.log('Curso completado correctamente');
+            res.status(200).json({ status: true, message: 'Has completado el curso exitosamente' });
+          }
         }
       });
     }
